@@ -1,31 +1,31 @@
 # SnapCoder CLI
 
-Command-line interface voor het maken van website screenshots - AI agent vriendelijke versie van de SnapCoder Chrome extension.
+Command-line interface for taking website screenshots - AI agent friendly version of SnapCoder Chrome extension.
 
-## Installatie
+## Installation
 
 ```bash
-# Globale installatie (aanbevolen)
+# Global installation (recommended)
 npm install -g @frontmatters/snapcoder-cli
 
-# Of lokaal in je project
+# Or locally in your project
 npm install @frontmatters/snapcoder-cli
 ```
 
-## Gebruik
+## Usage
 
-### Enkele screenshot maken
+### Taking a single screenshot
 
-Screenshots worden standaard opgeslagen in de `./snapcoder/` subdirectory in je huidige werkdirectory.
+Screenshots are saved by default in the `./snapcoder/` subdirectory of your current working directory.
 
 ```bash
-# Full page screenshot (opgeslagen in ./snapcoder/)
+# Full page screenshot (saved in ./snapcoder/)
 snapcoder capture https://example.com
 
 # Visible area screenshot
 snapcoder capture https://example.com --mode visible
 
-# Custom output pad
+# Custom output path
 snapcoder capture https://example.com --output my-screenshot.png
 
 # Custom browser size
@@ -38,36 +38,36 @@ snapcoder capture https://example.com --mode selection --selection "100,100,800,
 ### Batch screenshots
 
 ```bash
-# Maak urls.txt met één URL per regel
+# Create urls.txt with one URL per line
 echo "https://example.com" > urls.txt
 echo "https://google.com" >> urls.txt
 
-# Run batch capture (standaard naar ./snapcoder/)
+# Run batch capture (defaults to ./snapcoder/)
 snapcoder batch urls.txt
 
-# Of met custom directory
+# Or with custom directory
 snapcoder batch urls.txt --output-dir ./my-screenshots
 ```
 
-### Opties
+### Options
 
-- `--mode <mode>`: Screenshot modus (`visible`, `fullpage`, `selection`) - default: `fullpage`
-- `--output <path>`: Output bestandspad - default: auto-generated
-- `--width <width>`: Browser breedte - default: `1920`
-- `--height <height>`: Browser hoogte - default: `1080`
-- `--wait <ms>`: Wacht tijd na laden pagina - default: `2000`
-- `--headless <mode>`: Headless modus (`true`, `false`, `new`) - default: `true`
-- `--selection <coords>`: Selectie coördinaten voor selection mode (`x,y,width,height`)
+- `--mode <mode>`: Screenshot mode (`visible`, `fullpage`, `selection`) - default: `fullpage`
+- `--output <path>`: Output file path - default: auto-generated
+- `--width <width>`: Browser width - default: `1920`
+- `--height <height>`: Browser height - default: `1080`
+- `--wait <ms>`: Wait time after page load - default: `2000`
+- `--headless <mode>`: Headless mode (`true`, `false`, `new`) - default: `true`
+- `--selection <coords>`: Selection coordinates for selection mode (`x,y,width,height`)
 
-### Voor AI Agents
+### For AI Agents
 
-Deze tool is specifiek ontworpen voor gebruik door AI agents:
+This tool is specifically designed for use by AI agents:
 
 ```bash
-# Simpel gebruik
+# Simple usage
 snapcoder capture https://example.com
 
-# JSON output voor parsing (future feature)
+# JSON output for parsing (future feature)
 snapcoder capture https://example.com --format json
 
 # Batch processing
@@ -76,26 +76,26 @@ snapcoder batch urls.txt --output-dir ./output
 
 ## Features
 
-- ✅ Full page screenshots met optimized height detection (geen witte rand)
+- ✅ Full page screenshots with optimized height detection (no white borders)
 - ✅ Visible area screenshots  
 - ✅ Selection area screenshots
 - ✅ Batch processing
-- ✅ Auto-generated filenames met timestamp
+- ✅ Auto-generated filenames with timestamp
 - ✅ Customizable browser viewport
-- ✅ Headless en non-headless modes
-- ✅ AI agent vriendelijke CLI interface
+- ✅ Headless and non-headless modes
+- ✅ AI agent friendly CLI interface
 
-## Technische Details
+## Technical Details
 
-De CLI tool gebruikt:
-- **Puppeteer** voor browser automation
-- **Commander.js** voor CLI interface
-- **Chalk** voor colored output
-- Geporteerde screenshot logica van de SnapCoder Chrome extension
+The CLI tool uses:
+- **Puppeteer** for browser automation
+- **Commander.js** for CLI interface
+- **Chalk** for colored output
+- Ported screenshot logic from the SnapCoder Chrome extension
 
-## Bestandsnaming
+## File Naming
 
-Screenshots worden automatisch benoemd als:
+Screenshots are automatically named as:
 `snapcoder_{domain}_{YYYY-MM-DD_HH-MM-SS}.png`
 
-Bijvoorbeeld: `snapcoder_example_2024-06-15_14-30-25.png`
+For example: `snapcoder_example_2024-06-15_14-30-25.png`
