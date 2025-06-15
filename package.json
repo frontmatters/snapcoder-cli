@@ -1,6 +1,6 @@
 {
   "name": "@frontmatters/snapcoder-cli",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Command-line interface for taking website screenshots - AI agent friendly version of SnapCoder",
   "main": "index.js",
   "type": "module",
