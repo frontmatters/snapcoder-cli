@@ -1,11 +1,11 @@
 {
   "name": "@frontmatters/snapcoder-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Command-line interface for taking website screenshots - AI agent friendly version of SnapCoder",
   "main": "index.js",
   "type": "module",
   "bin": {
-    "snapcoder": "./index.js"
+    "snapcoder": "index.js"
   },
   "scripts": {
     "start": "node index.js",
@@ -25,7 +25,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/frontmatters/snapcoder-cli.git"
+    "url": "git+https://github.com/frontmatters/snapcoder-cli.git"
   },
   "bugs": {
     "url": "https://github.com/frontmatters/snapcoder-cli/issues"
