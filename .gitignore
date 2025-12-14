@@ -1,17 +1,66 @@
 # Dependencies
 node_modules/
+.npm/
 
-# Screenshots (test output)
+# Private folders
+saas-example/
+claude/
+.claude/
+
+# Test output
 snapcoder/
+*.png
+*.jpg
+*.jpeg
 
-# macOS
+# OS files
 .DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+*.swp
+*.swo
 
 # Logs
-*.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
 
-# Test files
-test-*.png
-test-*.jpg
-test-*.html
+# npm/yarn/pnpm
+*.tgz
+.yarn-integrity
+.pnp.*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Build outputs (for future use)
+dist/
+build/
+out/
+
+# Misc
+*.bak
+*.backup
+*~
