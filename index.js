@@ -6,140 +6,14 @@ import chalk from 'chalk';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import sharp from 'sharp';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB in bytes
-
-async function compressImageIfNeeded(buffer, filename) {
-  const originalSize = buffer.length;
-
-  if (originalSize <= MAX_FILE_SIZE) {
-    console.log(chalk.gray(`📦 Image size OK: ${(originalSize / 1024 / 1024).toFixed(2)} MB`));
-    return { buffer, filename };
-  }
-
-  console.log(chalk.yellow(`⚠️  Image too large: ${(originalSize / 1024 / 1024).toFixed(2)} MB, compressing...`));
-
-  const metadata = await sharp(buffer).metadata();
-  const totalPixels = metadata.width * metadata.height;
-  const SHARP_PIXEL_LIMIT = 268402689; // Sharp's default pixel limit
-
-  let workingBuffer = buffer;
-  let newFilename = filename.replace('.png', '.jpg');
-
-  // If image exceeds Sharp's pixel limit, resize first
-  if (totalPixels > SHARP_PIXEL_LIMIT) {
-    console.log(chalk.yellow(`⚠️  Image too large for processing (${metadata.width}x${metadata.height}), resizing first...`));
-    const scale = Math.sqrt(SHARP_PIXEL_LIMIT / totalPixels) * 0.95; // 0.95 for safety margin
-    const newWidth = Math.floor(metadata.width * scale);
-    const newHeight = Math.floor(metadata.height * scale);
-
-    workingBuffer = await sharp(buffer)
-      .resize(newWidth, newHeight, { fit: 'inside' })
-      .png()
-      .toBuffer();
-
-    console.log(chalk.gray(`📏 Resized to ${newWidth}x${newHeight} for processing`));
-  }
-
-  // Try JPEG compression (better compression than PNG for screenshots)
-  console.log(chalk.gray(`🔄 Converting to JPEG for better compression...`));
-
-  let quality = 90;
-  let compressed = workingBuffer;
-
-  while (quality > 20) {
-    try {
-      compressed = await sharp(workingBuffer)
-        .jpeg({ quality, mozjpeg: true })
-        .toBuffer();
-
-      const compressedSize = compressed.length;
-
-      if (compressedSize <= MAX_FILE_SIZE) {
-        console.log(chalk.green(`✅ Compressed to ${(compressedSize / 1024 / 1024).toFixed(2)} MB (JPEG quality: ${quality})`));
-        return { buffer: compressed, filename: newFilename };
-      }
-    } catch (error) {
-      console.log(chalk.red(`⚠️  Compression error at quality ${quality}: ${error.message}`));
-      break;
-    }
-
-    quality -= 10;
-  }
-
-  // If still too large, resize further
-  console.log(chalk.yellow(`⚠️  Still too large, resizing image...`));
-
-  const currentMetadata = await sharp(workingBuffer).metadata();
-  let scale = 0.9;
-
-  while (scale > 0.3) {
-    const newWidth = Math.floor(currentMetadata.width * scale);
-    const newHeight = Math.floor(currentMetadata.height * scale);
-
-    try {
-      compressed = await sharp(workingBuffer)
-        .resize(newWidth, newHeight, { fit: 'inside' })
-        .jpeg({ quality: 80, mozjpeg: true })
-        .toBuffer();
-
-      const compressedSize = compressed.length;
-
-      if (compressedSize <= MAX_FILE_SIZE) {
-        console.log(chalk.green(`✅ Resized to ${newWidth}x${newHeight} (${(compressedSize / 1024 / 1024).toFixed(2)} MB)`));
-        return { buffer: compressed, filename: newFilename };
-      }
-    } catch (error) {
-      console.log(chalk.red(`⚠️  Resize error at scale ${scale}: ${error.message}`));
-      break;
-    }
-
-    scale -= 0.1;
-  }
-
-  console.log(chalk.red(`⚠️  Warning: Could not compress below 5 MB, using best effort`));
-  return { buffer: compressed, filename: newFilename };
-}
-
 program
   .name('snapcoder')
   .description('CLI tool for creating website screenshots - AI agent friendly')
-  .version('1.1.0', '-v, --version', 'Output the current version');
-
-// Changelog command
-program
-  .command('changelog')
-  .description('Show version history and changelog')
-  .action(() => {
-    console.log(chalk.blue('\n📋 SnapCoder Changelog\n'));
-
-    console.log(chalk.green('v1.1.0') + chalk.gray(' - 2025-12-13'));
-    console.log(chalk.yellow('  Added:'));
-    console.log('    • Automatic image compression for size optimization (< 5 MB)');
-    console.log('    • Corporate network support (proxy + SSL certificate errors)');
-    console.log('    • File:// URL support for local HTML files');
-    console.log('    • New --proxy option for manual proxy configuration');
-    console.log('    • New --ignore-ssl option for corporate SSL interception');
-    console.log('    • -v flag for version (in addition to --version)');
-    console.log(chalk.yellow('  Fixed:'));
-    console.log('    • OWASP security vulnerabilities (js-yaml, tar-fs)');
-    console.log('    • Sharp pixel limit handling for very large screenshots');
-    console.log(chalk.yellow('  Changed:'));
-    console.log('    • Large screenshots (> 5 MB) automatically converted to JPEG');
-    console.log('    • Added Sharp dependency for image processing');
-
-    console.log(chalk.green('\nv1.0.0') + chalk.gray(' - Initial release'));
-    console.log('    • Full page screenshots');
-    console.log('    • Visible area screenshots');
-    console.log('    • Selection area screenshots');
-    console.log('    • Batch processing');
-
-    console.log(chalk.gray('\nFor full details: https://github.com/frontmatters/snapcoder-cli\n'));
-  });
+  .version('1.0.0');
 
 program
   .command('capture')
@@ -152,8 +26,6 @@ program
   .option('--wait <ms>', 'Wait time in milliseconds after page load', '2000')
   .option('--headless <mode>', 'Headless mode: true, false, or new', 'true')
   .option('--selection <coords>', 'Selection coordinates for selection mode (x,y,width,height)')
-  .option('--proxy <url>', 'Proxy server URL (e.g., http://proxy.company.com:8080)')
-  .option('--ignore-ssl', 'Ignore SSL certificate errors (useful for corporate networks)', false)
   .action(async (url, options) => {
     try {
       await captureScreenshot(url, options);
@@ -172,8 +44,6 @@ program
   .option('-w, --width <width>', 'Browser width', '1920')
   .option('-h, --height <height>', 'Browser height', '1080')
   .option('--wait <ms>', 'Wait time per page', '2000')
-  .option('--proxy <url>', 'Proxy server URL (e.g., http://proxy.company.com:8080)')
-  .option('--ignore-ssl', 'Ignore SSL certificate errors (useful for corporate networks)', false)
   .action(async (file, options) => {
     try {
       await batchCapture(file, options);
@@ -185,9 +55,9 @@ program
 
 async function captureScreenshot(url, options) {
   console.log(chalk.blue('🚀 Starting SnapCoder CLI...'));
-
+  
   // Validate URL
-  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('file://')) {
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = 'https://' + url;
   }
   
@@ -195,33 +65,15 @@ async function captureScreenshot(url, options) {
   console.log(chalk.gray(`📐 Mode: ${options.mode}`));
   console.log(chalk.gray(`🖥️  Browser: ${options.width}x${options.height}`));
   
-  // Prepare browser args with corporate network support
-  const browserArgs = [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-blink-features=AutomationControlled',
-    '--disable-features=IsolateOrigins,site-per-process'
-  ];
-
-  // Add SSL ignoring flags if requested or if ignore-ssl option is set
-  if (options.ignoreSsl) {
-    browserArgs.push('--ignore-certificate-errors');
-    browserArgs.push('--ignore-certificate-errors-spki-list');
-    console.log(chalk.gray(`⚠️  SSL certificate errors will be ignored`));
-  }
-
-  // Support proxy from CLI option or environment variables
-  const proxy = options.proxy || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy;
-  if (proxy) {
-    browserArgs.push(`--proxy-server=${proxy}`);
-    console.log(chalk.gray(`🔌 Using proxy: ${proxy}`));
-  }
-
   const browser = await puppeteer.launch({
     headless: options.headless === 'true' ? true : options.headless === 'false' ? false : 'new',
-    args: browserArgs,
-    defaultViewport: null,
-    ignoreHTTPSErrors: options.ignoreSsl || false
+    args: [
+      '--no-sandbox', 
+      '--disable-setuid-sandbox',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process'
+    ],
+    defaultViewport: null
   });
   
   try {
@@ -295,12 +147,9 @@ async function captureScreenshot(url, options) {
         throw new Error(`Unknown mode: ${options.mode}`);
     }
     
-    // Compress if needed
-    const { buffer: finalScreenshot, filename: finalFilename } = await compressImageIfNeeded(screenshot, filename);
-
-    await fs.writeFile(finalFilename, finalScreenshot);
-    console.log(chalk.green(`✅ Screenshot saved: ${finalFilename}`));
-    console.log(chalk.gray(`📊 Final file size: ${(finalScreenshot.length / 1024 / 1024).toFixed(2)} MB`));
+    await fs.writeFile(filename, screenshot);
+    console.log(chalk.green(`✅ Screenshot saved: ${filename}`));
+    console.log(chalk.gray(`📊 File size: ${(screenshot.length / 1024).toFixed(1)} KB`));
     
   } finally {
     await browser.close();
