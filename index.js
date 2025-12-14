@@ -6,14 +6,19 @@ import chalk from 'chalk';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import sharp from 'sharp';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Maximum file size for Claude Code compatibility (5 MB)
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_PIXELS = 268000000; // Sharp's pixel limit
+
 program
   .name('snapcoder')
   .description('CLI tool for creating website screenshots - AI agent friendly')
-  .version('1.0.0');
+  .version('1.2.0', '-v, --version', 'Output the current version');
 
 program
   .command('capture')
@@ -26,6 +31,8 @@ program
   .option('--wait <ms>', 'Wait time in milliseconds after page load', '2000')
   .option('--headless <mode>', 'Headless mode: true, false, or new', 'true')
   .option('--selection <coords>', 'Selection coordinates for selection mode (x,y,width,height)')
+  .option('--proxy <url>', 'Proxy server URL (e.g., http://proxy.company.com:8080)')
+  .option('--ignore-ssl', 'Ignore SSL certificate errors (useful for corporate networks)')
   .action(async (url, options) => {
     try {
       await captureScreenshot(url, options);
@@ -44,6 +51,8 @@ program
   .option('-w, --width <width>', 'Browser width', '1920')
   .option('-h, --height <height>', 'Browser height', '1080')
   .option('--wait <ms>', 'Wait time per page', '2000')
+  .option('--proxy <url>', 'Proxy server URL')
+  .option('--ignore-ssl', 'Ignore SSL certificate errors')
   .action(async (file, options) => {
     try {
       await batchCapture(file, options);
@@ -53,62 +62,233 @@ program
     }
   });
 
+program
+  .command('changelog')
+  .description('Show version history and changelog')
+  .action(() => {
+    console.log(chalk.blue('\n📋 SnapCoder Changelog\n'));
+
+    console.log(chalk.bold('Version 1.2.0') + chalk.gray(' (2025-12-14)'));
+    console.log(chalk.green('  Added:'));
+    console.log('    • Automatic image compression for Claude Code compatibility (< 5 MB)');
+    console.log('    • Corporate network support (proxy + SSL certificate handling)');
+    console.log('    • File:// URL support for local HTML files');
+    console.log('    • Changelog command (snapcoder changelog)');
+    console.log('    • -v flag for version display');
+    console.log(chalk.yellow('  Fixed:'));
+    console.log('    • OWASP security vulnerabilities (js-yaml, tar-fs)');
+    console.log('    • Sharp pixel limit handling for very large screenshots');
+    console.log(chalk.blue('  Changed:'));
+    console.log('    • Large screenshots (> 5 MB) automatically converted to JPEG');
+    console.log('    • Package renamed from @frontmatters/snapcoder-cli to snapcoder\n');
+
+    console.log(chalk.bold('Version 1.1.1') + chalk.gray(' (2024)'));
+    console.log(chalk.green('  Added:'));
+    console.log('    • Optimized full-page screenshot capture');
+    console.log('    • Better lazy-loading content handling\n');
+
+    console.log(chalk.bold('Version 1.0.0') + chalk.gray(' (2024)'));
+    console.log(chalk.green('  Added:'));
+    console.log('    • Initial release');
+    console.log('    • Full-page, visible area, and selection screenshot modes');
+    console.log('    • Batch processing support');
+    console.log('    • AI agent friendly CLI interface\n');
+  });
+
+async function compressImageIfNeeded(buffer, filename) {
+  const originalSize = buffer.length;
+
+  // If image is already under 5 MB, return as-is
+  if (originalSize <= MAX_FILE_SIZE) {
+    console.log(chalk.gray(`📦 Image size OK: ${(originalSize / 1024 / 1024).toFixed(2)} MB`));
+    return { buffer, filename };
+  }
+
+  console.log(chalk.yellow(`⚠️  Image too large: ${(originalSize / 1024 / 1024).toFixed(2)} MB`));
+  console.log(chalk.blue('🔄 Compressing to JPEG...'));
+
+  try {
+    const image = sharp(buffer);
+    const metadata = await image.metadata();
+    const totalPixels = metadata.width * metadata.height;
+
+    // Check if image exceeds Sharp's pixel limit
+    if (totalPixels > MAX_PIXELS) {
+      console.log(chalk.yellow(`⚠️  Image exceeds pixel limit (${(totalPixels / 1000000).toFixed(0)}M > 268M pixels)`));
+      console.log(chalk.blue('🔄 Resizing before compression...'));
+
+      // Calculate scale to get under pixel limit
+      const scale = Math.sqrt(MAX_PIXELS / totalPixels) * 0.95; // 5% safety margin
+      const newWidth = Math.floor(metadata.width * scale);
+      const newHeight = Math.floor(metadata.height * scale);
+
+      console.log(chalk.gray(`   Resizing from ${metadata.width}x${metadata.height} to ${newWidth}x${newHeight}`));
+
+      // Resize first, then compress
+      let quality = 80;
+      let compressed = await sharp(buffer)
+        .resize(newWidth, newHeight, { fit: 'inside' })
+        .jpeg({ quality, progressive: true })
+        .toBuffer();
+
+      // Try reducing quality if still too large
+      while (compressed.length > MAX_FILE_SIZE && quality > 20) {
+        quality -= 10;
+        console.log(chalk.gray(`   Trying quality ${quality}%...`));
+        compressed = await sharp(buffer)
+          .resize(newWidth, newHeight, { fit: 'inside' })
+          .jpeg({ quality, progressive: true })
+          .toBuffer();
+      }
+
+      const newSize = compressed.length;
+      console.log(chalk.green(`✅ Compressed: ${(originalSize / 1024 / 1024).toFixed(2)} MB → ${(newSize / 1024 / 1024).toFixed(2)} MB (quality: ${quality}%)`));
+
+      // Change extension to .jpg
+      const newFilename = filename.replace(/\.png$/i, '.jpg');
+      return { buffer: compressed, filename: newFilename };
+    }
+
+    // Progressive JPEG compression with quality reduction
+    let quality = 90;
+    let compressed = await sharp(buffer)
+      .jpeg({ quality, progressive: true })
+      .toBuffer();
+
+    // Keep reducing quality until we're under 5 MB or hit minimum quality
+    while (compressed.length > MAX_FILE_SIZE && quality > 20) {
+      quality -= 10;
+      console.log(chalk.gray(`   Trying quality ${quality}%...`));
+      compressed = await sharp(buffer)
+        .jpeg({ quality, progressive: true })
+        .toBuffer();
+    }
+
+    // If still too large, try resizing
+    if (compressed.length > MAX_FILE_SIZE) {
+      console.log(chalk.yellow('   Still too large, resizing...'));
+      let scale = 0.9;
+
+      while (compressed.length > MAX_FILE_SIZE && scale > 0.3) {
+        const newWidth = Math.floor(metadata.width * scale);
+        const newHeight = Math.floor(metadata.height * scale);
+
+        console.log(chalk.gray(`   Trying ${newWidth}x${newHeight} (${Math.round(scale * 100)}%)...`));
+
+        compressed = await sharp(buffer)
+          .resize(newWidth, newHeight, { fit: 'inside' })
+          .jpeg({ quality: 80, progressive: true })
+          .toBuffer();
+
+        scale -= 0.1;
+      }
+    }
+
+    const newSize = compressed.length;
+    const compression = ((1 - newSize / originalSize) * 100).toFixed(1);
+
+    if (newSize > MAX_FILE_SIZE) {
+      console.log(chalk.yellow(`⚠️  Best effort: ${(newSize / 1024 / 1024).toFixed(2)} MB (${compression}% reduction)`));
+      console.log(chalk.gray('   Image still exceeds 5 MB limit - consider using selection mode'));
+    } else {
+      console.log(chalk.green(`✅ Compressed: ${(originalSize / 1024 / 1024).toFixed(2)} MB → ${(newSize / 1024 / 1024).toFixed(2)} MB (${compression}% reduction)`));
+    }
+
+    // Change extension to .jpg
+    const newFilename = filename.replace(/\.png$/i, '.jpg');
+    return { buffer: compressed, filename: newFilename };
+
+  } catch (error) {
+    console.error(chalk.red('Compression failed:'), error.message);
+    console.log(chalk.yellow('Saving original PNG...'));
+    return { buffer, filename };
+  }
+}
+
 async function captureScreenshot(url, options) {
   console.log(chalk.blue('🚀 Starting SnapCoder CLI...'));
-  
-  // Validate URL
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+
+  // Validate and normalize URL
+  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('file://')) {
     url = 'https://' + url;
   }
-  
+
   console.log(chalk.gray(`📍 URL: ${url}`));
   console.log(chalk.gray(`📐 Mode: ${options.mode}`));
   console.log(chalk.gray(`🖥️  Browser: ${options.width}x${options.height}`));
-  
+
+  // Detect proxy from environment or options
+  const proxy = options.proxy ||
+                process.env.HTTPS_PROXY ||
+                process.env.HTTP_PROXY ||
+                process.env.https_proxy ||
+                process.env.http_proxy;
+
+  if (proxy) {
+    console.log(chalk.gray(`🔌 Proxy: ${proxy}`));
+  }
+
+  if (options.ignoreSsl) {
+    console.log(chalk.gray('🔓 SSL verification: disabled'));
+  }
+
+  // Build browser args with corporate network support
+  const browserArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-blink-features=AutomationControlled',
+    '--disable-features=IsolateOrigins,site-per-process'
+  ];
+
+  if (options.ignoreSsl) {
+    browserArgs.push('--ignore-certificate-errors');
+    browserArgs.push('--ignore-certificate-errors-spki-list');
+  }
+
+  if (proxy) {
+    browserArgs.push(`--proxy-server=${proxy}`);
+  }
+
   const browser = await puppeteer.launch({
     headless: options.headless === 'true' ? true : options.headless === 'false' ? false : 'new',
-    args: [
-      '--no-sandbox', 
-      '--disable-setuid-sandbox',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-features=IsolateOrigins,site-per-process'
-    ],
-    defaultViewport: null
+    args: browserArgs,
+    defaultViewport: null,
+    ignoreHTTPSErrors: options.ignoreSsl || false
   });
-  
+
   try {
     const page = await browser.newPage();
-    
+
     // Set user agent to match Chrome extension environment
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
-    
+
     // Set viewport to match Chrome extension
     await page.setViewport({
       width: parseInt(options.width),
       height: parseInt(options.height),
       deviceScaleFactor: 1
     });
-    
+
     console.log(chalk.yellow('⏳ Loading page...'));
-    await page.goto(url, { 
+    await page.goto(url, {
       waitUntil: 'networkidle2',
       timeout: 30000
     });
-    
+
     // Wait extra time as specified
     if (parseInt(options.wait) > 0) {
       console.log(chalk.yellow(`⏳ Waiting ${options.wait}ms...`));
       await new Promise(resolve => setTimeout(resolve, parseInt(options.wait)));
     }
-    
+
     let screenshot;
     let filename = options.output;
-    
+
     if (!filename) {
       // Ensure snapcoder directory exists
       const snapcoderDir = path.join(process.cwd(), 'snapcoder');
       await fs.mkdir(snapcoderDir, { recursive: true });
-      
+
       const domain = new URL(url).hostname.replace('www.', '').split('.')[0] || 'screenshot';
       const timestamp = new Date().toISOString()
         .replace(/[:.]/g, '-')
@@ -116,21 +296,21 @@ async function captureScreenshot(url, options) {
         .split('.')[0];
       filename = path.join(snapcoderDir, `snapcoder_${domain}_${timestamp}.png`);
     }
-    
+
     switch (options.mode) {
       case 'visible':
         console.log(chalk.yellow('📸 Taking visible area screenshot...'));
-        screenshot = await page.screenshot({ 
+        screenshot = await page.screenshot({
           type: 'png',
           quality: 100
         });
         break;
-        
+
       case 'fullpage':
         console.log(chalk.yellow('📸 Taking full page screenshot...'));
         screenshot = await captureFullPageOptimized(page);
         break;
-        
+
       case 'selection':
         if (!options.selection) {
           throw new Error('Selection coordinates required for selection mode (--selection x,y,width,height)');
@@ -142,15 +322,18 @@ async function captureScreenshot(url, options) {
           clip: { x, y, width, height }
         });
         break;
-        
+
       default:
         throw new Error(`Unknown mode: ${options.mode}`);
     }
-    
-    await fs.writeFile(filename, screenshot);
-    console.log(chalk.green(`✅ Screenshot saved: ${filename}`));
-    console.log(chalk.gray(`📊 File size: ${(screenshot.length / 1024).toFixed(1)} KB`));
-    
+
+    // Compress if needed
+    const result = await compressImageIfNeeded(screenshot, filename);
+
+    await fs.writeFile(result.filename, result.buffer);
+    console.log(chalk.green(`✅ Screenshot saved: ${result.filename}`));
+    console.log(chalk.gray(`📊 File size: ${(result.buffer.length / 1024).toFixed(1)} KB`));
+
   } finally {
     await browser.close();
   }
@@ -159,7 +342,7 @@ async function captureScreenshot(url, options) {
 async function captureFullPageOptimized(page) {
   // Port of SnapCoder's optimized full page logic
   console.log(chalk.gray('🔍 Determining page dimensions...'));
-  
+
   // First scroll down to load lazy-loaded content
   await page.evaluate(() => {
     return new Promise((resolve) => {
@@ -169,7 +352,7 @@ async function captureFullPageOptimized(page) {
         const scrollHeight = document.body.scrollHeight;
         window.scrollBy(0, distance);
         totalHeight += distance;
-        
+
         if(totalHeight >= scrollHeight){
           clearInterval(timer);
           window.scrollTo(0, 0); // Scroll back to top
@@ -178,19 +361,19 @@ async function captureFullPageOptimized(page) {
       }, 100);
     });
   });
-  
+
   // Wait a moment for all content to be loaded
   await new Promise(resolve => setTimeout(resolve, 1000));
-  
+
   const dimensions = await page.evaluate(() => {
     const body = document.body;
     const html = document.documentElement;
-    
+
     const width = Math.max(
       Math.max(body.scrollWidth, body.offsetWidth),
       Math.max(html.clientWidth, html.scrollWidth, html.offsetWidth)
     );
-    
+
     // Get the maximum height from all sources
     let height = Math.max(
       body.scrollHeight,
@@ -199,15 +382,15 @@ async function captureFullPageOptimized(page) {
       html.scrollHeight,
       html.offsetHeight
     );
-    
+
     // Don't try to optimize/reduce height - use the full document height
     // This ensures we capture everything including the footer
-    
+
     return { width, height };
   });
-  
+
   console.log(chalk.gray(`📏 Page dimensions: ${dimensions.width}x${dimensions.height}px`));
-  
+
   // Take the full page screenshot using Puppeteer's built-in method
   return await page.screenshot({
     type: 'png',
@@ -217,21 +400,21 @@ async function captureFullPageOptimized(page) {
 
 async function batchCapture(file, options) {
   console.log(chalk.blue('🚀 Starting batch capture...'));
-  
+
   const urls = (await fs.readFile(file, 'utf-8'))
     .split('\n')
     .map(line => line.trim())
     .filter(line => line && !line.startsWith('#'));
-  
+
   console.log(chalk.gray(`📋 Found ${urls.length} URLs`));
-  
+
   // Ensure output directory exists
   await fs.mkdir(options.outputDir, { recursive: true });
-  
+
   for (let i = 0; i < urls.length; i++) {
     const url = urls[i];
     console.log(chalk.blue(`\n[${i + 1}/${urls.length}] ${url}`));
-    
+
     try {
       const domain = new URL(url.startsWith('http') ? url : 'https://' + url).hostname.replace('www.', '').split('.')[0];
       const timestamp = new Date().toISOString()
@@ -239,14 +422,14 @@ async function batchCapture(file, options) {
         .replace('T', '_')
         .split('.')[0];
       const filename = path.join(options.outputDir, `snapcoder_${domain}_${timestamp}.png`);
-      
+
       await captureScreenshot(url, { ...options, output: filename });
-      
+
     } catch (error) {
       console.error(chalk.red(`❌ Error with ${url}:`), error.message);
     }
   }
-  
+
   console.log(chalk.green(`\n✅ Batch capture completed! Screenshots saved to: ${options.outputDir}`));
 }
 
