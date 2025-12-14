@@ -1,15 +1,15 @@
-# SnapCoder CLI
+# SnapCoder
 
-Command-line interface for taking website screenshots - AI agent friendly version of SnapCoder Chrome extension.
+Command-line interface for taking website screenshots - AI agent friendly
 
 ## Installation
 
 ```bash
 # Global installation (recommended)
-npm install -g @frontmatters/snapcoder-cli
+npm install -g snapcoder
 
 # Or locally in your project
-npm install @frontmatters/snapcoder-cli
+npm install snapcoder
 ```
 
 ## Usage
@@ -58,6 +58,23 @@ snapcoder batch urls.txt --output-dir ./my-screenshots
 - `--wait <ms>`: Wait time after page load - default: `2000`
 - `--headless <mode>`: Headless mode (`true`, `false`, `new`) - default: `true`
 - `--selection <coords>`: Selection coordinates for selection mode (`x,y,width,height`)
+- `--proxy <url>`: Proxy server URL (e.g., `http://proxy.company.com:8080`)
+- `--ignore-ssl`: Ignore SSL certificate errors (useful for corporate networks)
+
+### Version & Help
+
+```bash
+# Show version
+snapcoder -v
+snapcoder --version
+
+# Show changelog
+snapcoder changelog
+
+# Show help
+snapcoder --help
+snapcoder capture --help
+```
 
 ### For AI Agents
 
@@ -77,12 +94,15 @@ snapcoder batch urls.txt --output-dir ./output
 ## Features
 
 - ✅ Full page screenshots with optimized height detection (no white borders)
-- ✅ Visible area screenshots  
+- ✅ Visible area screenshots
 - ✅ Selection area screenshots
 - ✅ Batch processing
 - ✅ Auto-generated filenames with timestamp
 - ✅ Customizable browser viewport
 - ✅ Headless and non-headless modes
+- ✅ Automatic image compression for Claude Code compatibility (< 5 MB)
+- ✅ Corporate network support (proxy + SSL certificate handling)
+- ✅ File:// URL support for local HTML files
 - ✅ AI agent friendly CLI interface
 
 ## Technical Details
@@ -91,7 +111,7 @@ The CLI tool uses:
 - **Puppeteer** for browser automation
 - **Commander.js** for CLI interface
 - **Chalk** for colored output
-- Ported screenshot logic from the SnapCoder Chrome extension
+- **Sharp** for image compression and optimization
 
 ## File Naming
 

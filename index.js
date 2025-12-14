@@ -18,7 +18,7 @@ const MAX_PIXELS = 268000000; // Sharp's pixel limit
 program
   .name('snapcoder')
   .description('CLI tool for creating website screenshots - AI agent friendly')
-  .version('1.2.0', '-v, --version', 'Output the current version');
+  .version('1.2.1', '-v, --version', 'Output the current version');
 
 program
   .command('capture')
