@@ -1,0 +1,48 @@
+{
+  "name": "snapcoder",
+  "version": "1.1.0",
+  "description": "Command-line interface for taking website screenshots - AI agent friendly version of SnapCoder",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "snapcoder": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "screenshot",
+    "cli",
+    "puppeteer",
+    "automation",
+    "ai-agent",
+    "webshot",
+    "capture",
+    "fullpage"
+  ],
+  "author": "FrontMatters <hello@frontmatters.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontmatters/snapcoder-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/frontmatters/snapcoder-cli/issues"
+  },
+  "homepage": "https://github.com/frontmatters/snapcoder-cli#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "index.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^12.1.0",
+    "puppeteer": "^24.10.1",
+    "sharp": "^0.34.5"
+  }
+}

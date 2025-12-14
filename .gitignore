@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Screenshots (test output)
+snapcoder/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test files
+test-*.png
+test-*.jpg
+test-*.html
