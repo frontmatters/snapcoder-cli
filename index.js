@@ -14,11 +14,12 @@ const __dirname = path.dirname(__filename);
 // Maximum file size for Claude Code compatibility (5 MB)
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const MAX_PIXELS = 268000000; // Sharp's pixel limit
+const MAX_DIMENSION = 8000; // Claude API maximum dimension (width or height)
 
 program
   .name('snapcoder')
   .description('CLI tool for creating website screenshots - AI agent friendly')
-  .version('1.2.1', '-v, --version', 'Output the current version');
+  .version('1.2.2', '-v, --version', 'Output the current version');
 
 program
   .command('capture')
@@ -68,6 +69,14 @@ program
   .action(() => {
     console.log(chalk.blue('\n📋 SnapCoder Changelog\n'));
 
+    console.log(chalk.bold('Version 1.2.2') + chalk.gray(' (2025-12-25)'));
+    console.log(chalk.green('  Added:'));
+    console.log('    • Automatic dimension checking (max 8000px per dimension for Claude API)');
+    console.log('    • Smart resizing for images exceeding dimension limits');
+    console.log(chalk.yellow('  Fixed:'));
+    console.log('    • Images now automatically resized to meet Claude API dimension requirements');
+    console.log('    • Better handling of very large screenshots\n');
+
     console.log(chalk.bold('Version 1.2.0') + chalk.gray(' (2025-12-14)'));
     console.log(chalk.green('  Added:'));
     console.log('    • Automatic image compression for Claude Code compatibility (< 5 MB)');
@@ -98,105 +107,136 @@ program
 async function compressImageIfNeeded(buffer, filename) {
   const originalSize = buffer.length;
 
-  // If image is already under 5 MB, return as-is
-  if (originalSize <= MAX_FILE_SIZE) {
-    console.log(chalk.gray(`📦 Image size OK: ${(originalSize / 1024 / 1024).toFixed(2)} MB`));
+  // Check image dimensions first
+  const image = sharp(buffer);
+  const metadata = await image.metadata();
+
+  const exceedsSize = originalSize > MAX_FILE_SIZE;
+  const exceedsDimensions = metadata.width > MAX_DIMENSION || metadata.height > MAX_DIMENSION;
+
+  // If image meets all requirements, return as-is
+  if (!exceedsSize && !exceedsDimensions) {
+    console.log(chalk.gray(`📦 Image OK: ${(originalSize / 1024 / 1024).toFixed(2)} MB, ${metadata.width}x${metadata.height}px`));
     return { buffer, filename };
   }
 
-  console.log(chalk.yellow(`⚠️  Image too large: ${(originalSize / 1024 / 1024).toFixed(2)} MB`));
-  console.log(chalk.blue('🔄 Compressing to JPEG...'));
+  if (exceedsSize) {
+    console.log(chalk.yellow(`⚠️  Image too large: ${(originalSize / 1024 / 1024).toFixed(2)} MB`));
+  }
+  if (exceedsDimensions) {
+    console.log(chalk.yellow(`⚠️  Image dimensions too large: ${metadata.width}x${metadata.height}px (max: ${MAX_DIMENSION}px per dimension)`));
+  }
+  console.log(chalk.blue('🔄 Processing image...'));
 
   try {
-    const image = sharp(buffer);
-    const metadata = await image.metadata();
     const totalPixels = metadata.width * metadata.height;
+
+    // Calculate required scaling
+    let scale = 1;
+    let resizeReason = '';
+
+    // Check dimension limits (Claude API: 8000px max per dimension)
+    if (exceedsDimensions) {
+      const widthScale = metadata.width > MAX_DIMENSION ? MAX_DIMENSION / metadata.width : 1;
+      const heightScale = metadata.height > MAX_DIMENSION ? MAX_DIMENSION / metadata.height : 1;
+      scale = Math.min(widthScale, heightScale) * 0.95; // 5% safety margin
+      resizeReason = 'dimension limit';
+    }
 
     // Check if image exceeds Sharp's pixel limit
     if (totalPixels > MAX_PIXELS) {
-      console.log(chalk.yellow(`⚠️  Image exceeds pixel limit (${(totalPixels / 1000000).toFixed(0)}M > 268M pixels)`));
-      console.log(chalk.blue('🔄 Resizing before compression...'));
+      const pixelScale = Math.sqrt(MAX_PIXELS / totalPixels) * 0.95; // 5% safety margin
+      scale = Math.min(scale === 1 ? pixelScale : scale, pixelScale);
+      resizeReason = resizeReason ? 'dimension and pixel limits' : 'pixel limit';
+    }
 
-      // Calculate scale to get under pixel limit
-      const scale = Math.sqrt(MAX_PIXELS / totalPixels) * 0.95; // 5% safety margin
+    // Resize if needed
+    let processedBuffer = buffer;
+    let currentWidth = metadata.width;
+    let currentHeight = metadata.height;
+
+    if (scale < 1) {
       const newWidth = Math.floor(metadata.width * scale);
       const newHeight = Math.floor(metadata.height * scale);
 
+      console.log(chalk.blue(`🔄 Resizing due to ${resizeReason}...`));
       console.log(chalk.gray(`   Resizing from ${metadata.width}x${metadata.height} to ${newWidth}x${newHeight}`));
 
-      // Resize first, then compress
-      let quality = 80;
-      let compressed = await sharp(buffer)
+      // Resize first
+      processedBuffer = await sharp(buffer)
         .resize(newWidth, newHeight, { fit: 'inside' })
+        .png()
+        .toBuffer();
+
+      currentWidth = newWidth;
+      currentHeight = newHeight;
+    }
+
+    // Now check if we need to compress for file size
+    const resizedSize = processedBuffer.length;
+
+    // If after resizing we're still over the file size limit, compress to JPEG
+    if (resizedSize > MAX_FILE_SIZE) {
+      console.log(chalk.blue('🔄 Converting to JPEG for better compression...'));
+
+      let quality = 90;
+      let compressed = await sharp(processedBuffer)
         .jpeg({ quality, progressive: true })
         .toBuffer();
 
-      // Try reducing quality if still too large
+      // Keep reducing quality until we're under 5 MB or hit minimum quality
       while (compressed.length > MAX_FILE_SIZE && quality > 20) {
         quality -= 10;
         console.log(chalk.gray(`   Trying quality ${quality}%...`));
-        compressed = await sharp(buffer)
-          .resize(newWidth, newHeight, { fit: 'inside' })
+        compressed = await sharp(processedBuffer)
           .jpeg({ quality, progressive: true })
           .toBuffer();
       }
 
+      // If still too large, try further resizing
+      if (compressed.length > MAX_FILE_SIZE) {
+        console.log(chalk.yellow('   Still too large, resizing further...'));
+        let additionalScale = 0.9;
+
+        while (compressed.length > MAX_FILE_SIZE && additionalScale > 0.3) {
+          const newWidth = Math.floor(currentWidth * additionalScale);
+          const newHeight = Math.floor(currentHeight * additionalScale);
+
+          console.log(chalk.gray(`   Trying ${newWidth}x${newHeight} (${Math.round(additionalScale * 100)}%)...`));
+
+          compressed = await sharp(processedBuffer)
+            .resize(newWidth, newHeight, { fit: 'inside' })
+            .jpeg({ quality: 80, progressive: true })
+            .toBuffer();
+
+          additionalScale -= 0.1;
+        }
+      }
+
       const newSize = compressed.length;
-      console.log(chalk.green(`✅ Compressed: ${(originalSize / 1024 / 1024).toFixed(2)} MB → ${(newSize / 1024 / 1024).toFixed(2)} MB (quality: ${quality}%)`));
+      const compression = ((1 - newSize / originalSize) * 100).toFixed(1);
+
+      if (newSize > MAX_FILE_SIZE) {
+        console.log(chalk.yellow(`⚠️  Best effort: ${(newSize / 1024 / 1024).toFixed(2)} MB (${compression}% reduction)`));
+        console.log(chalk.gray('   Image still exceeds 5 MB limit - consider using selection mode'));
+      } else {
+        console.log(chalk.green(`✅ Processed: ${(originalSize / 1024 / 1024).toFixed(2)} MB → ${(newSize / 1024 / 1024).toFixed(2)} MB (${compression}% reduction)`));
+      }
 
       // Change extension to .jpg
       const newFilename = filename.replace(/\.png$/i, '.jpg');
       return { buffer: compressed, filename: newFilename };
     }
 
-    // Progressive JPEG compression with quality reduction
-    let quality = 90;
-    let compressed = await sharp(buffer)
-      .jpeg({ quality, progressive: true })
-      .toBuffer();
-
-    // Keep reducing quality until we're under 5 MB or hit minimum quality
-    while (compressed.length > MAX_FILE_SIZE && quality > 20) {
-      quality -= 10;
-      console.log(chalk.gray(`   Trying quality ${quality}%...`));
-      compressed = await sharp(buffer)
-        .jpeg({ quality, progressive: true })
-        .toBuffer();
+    // If we resized but don't need JPEG compression, return the resized PNG
+    if (scale < 1) {
+      const finalSize = processedBuffer.length;
+      console.log(chalk.green(`✅ Resized: ${metadata.width}x${metadata.height} → ${currentWidth}x${currentHeight} (${(finalSize / 1024 / 1024).toFixed(2)} MB)`));
+      return { buffer: processedBuffer, filename };
     }
 
-    // If still too large, try resizing
-    if (compressed.length > MAX_FILE_SIZE) {
-      console.log(chalk.yellow('   Still too large, resizing...'));
-      let scale = 0.9;
-
-      while (compressed.length > MAX_FILE_SIZE && scale > 0.3) {
-        const newWidth = Math.floor(metadata.width * scale);
-        const newHeight = Math.floor(metadata.height * scale);
-
-        console.log(chalk.gray(`   Trying ${newWidth}x${newHeight} (${Math.round(scale * 100)}%)...`));
-
-        compressed = await sharp(buffer)
-          .resize(newWidth, newHeight, { fit: 'inside' })
-          .jpeg({ quality: 80, progressive: true })
-          .toBuffer();
-
-        scale -= 0.1;
-      }
-    }
-
-    const newSize = compressed.length;
-    const compression = ((1 - newSize / originalSize) * 100).toFixed(1);
-
-    if (newSize > MAX_FILE_SIZE) {
-      console.log(chalk.yellow(`⚠️  Best effort: ${(newSize / 1024 / 1024).toFixed(2)} MB (${compression}% reduction)`));
-      console.log(chalk.gray('   Image still exceeds 5 MB limit - consider using selection mode'));
-    } else {
-      console.log(chalk.green(`✅ Compressed: ${(originalSize / 1024 / 1024).toFixed(2)} MB → ${(newSize / 1024 / 1024).toFixed(2)} MB (${compression}% reduction)`));
-    }
-
-    // Change extension to .jpg
-    const newFilename = filename.replace(/\.png$/i, '.jpg');
-    return { buffer: compressed, filename: newFilename };
+    // Should never reach here, but just in case
+    return { buffer: processedBuffer, filename };
 
   } catch (error) {
     console.error(chalk.red('Compression failed:'), error.message);
